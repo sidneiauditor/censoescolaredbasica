@@ -94,9 +94,29 @@ def _render_operacional_dashboard_download() -> None:
         censo_work=PipelineState.censo_work(),
     )
     exercicio = PipelineState.exercise()
+
+    # CNPJs que também aparecem no Censo Superior (instituições mistas)
+    cnpjs_mistos: set[str] = set()
+    resultado_superior = st.session_state.get("cif_superior_resultado")
+    if resultado_superior is not None and "dms__NUCNPJ" in resultado_superior.columns:
+        sup_matched = (
+            resultado_superior[resultado_superior["match_status"] == "match_textual"]
+            if "match_status" in resultado_superior.columns
+            else resultado_superior
+        )
+        cnpjs_mistos = set(
+            sup_matched["dms__NUCNPJ"].dropna()
+            .astype(str).str.replace(r"\.0$", "", regex=True)
+            .str.strip().str.zfill(14)
+        )
+
     st.download_button(
         label="Exportar Divergências Operacionais (.xlsx)",
-        data=exportar_divergencias_operacionais(df_op, exercicio=exercicio),
+        data=exportar_divergencias_operacionais(
+            df_op,
+            exercicio=exercicio,
+            cnpjs_mistos=cnpjs_mistos or None,
+        ),
         file_name=f"divergencias_dms_censo_{exercicio}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_divergencias_operacional",

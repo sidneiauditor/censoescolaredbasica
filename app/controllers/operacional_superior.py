@@ -249,12 +249,25 @@ def _render_superior_dashboard() -> None:
         if "match_status" in resultado.columns
         else resultado
     )
+
+    # CNPJs que também aparecem no Censo Escolar (instituições mistas)
+    cnpjs_mistos: set[str] = set()
+    consolidado_basica = PipelineState.consolidado()
+    if consolidado_basica is not None and "dms__NUCNPJ" in consolidado_basica.columns:
+        cnpjs_mistos = set(
+            consolidado_basica["dms__NUCNPJ"].dropna()
+            .astype(str).str.replace(r"\.0$", "", regex=True)
+            .str.strip().str.zfill(14)
+        )
+
     st.download_button(
         label="Exportar Divergências Operacionais — Ensino Superior (.xlsx)",
         data=exportar_divergencias_operacionais(
             resultado_matched,
             exercicio=exercicio,
             col_censo_entidade="censo__CO_IES",
+            label_censo="Qtd Matrículas Censo Superior",
+            cnpjs_mistos=cnpjs_mistos or None,
         ),
         file_name=f"divergencias_superior_{exercicio}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
