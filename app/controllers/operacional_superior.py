@@ -16,6 +16,7 @@ import streamlit as st
 from config import APP_DIR
 from controllers.common import load_bundle, versioned_output_path, write_xlsx_async
 from domain.dataset_kind import DatasetKind
+from services.cnpj_aggregation import filtrar_dms_validas
 from services.divergencia_export_service import exportar_divergencias_operacionais
 from services.indicators import add_basic_fiscal_indicators
 from services.superior_consolidator import MUNICIPIO_SALVADOR, consolidate_censo_superior
@@ -68,6 +69,20 @@ def _executar_pipeline_superior(
     score_cutoff: float,
 ) -> bool:
     """Executa o pipeline completo e persiste resultado na sessão."""
+
+    # ── 0. Higienização: excluir DMS canceladas/retificadoras
+    n_antes = len(dms_df)
+    dms_df = filtrar_dms_validas(dms_df)
+    n_excluidos = n_antes - len(dms_df)
+    if n_excluidos:
+        st.warning(
+            f"**{n_excluidos} registro(s) excluído(s)** da DMS "
+            f"(SITUACAO=CANCELADA ou TIPO=RETIFICADORA) antes do processamento.",
+            icon="⚠️",
+        )
+    if dms_df.empty:
+        st.error("Nenhum registro DMS válido após higienização (todos cancelados/retificadores).")
+        return False
 
     # ── 1. Consolidar Censo Superior
     with st.spinner("Consolidando IES + Cursos…"):

@@ -210,6 +210,29 @@ def _dms_valid_launch_mask(
     return mask
 
 
+def filtrar_dms_validas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove DMS com SITUACAO='CANCELADA' ou TIPO='RETIFICADORA'.
+
+    Função centralizada de higienização — deve ser chamada sobre o DataFrame
+    DMS bruto ANTES de qualquer cálculo, agrupamento, merge ou exportação.
+
+    Reconhece as variantes de nome de coluna definidas em
+    ``DMS_SITUACAO_ALIASES`` e ``DMS_TIPO_ALIASES``.
+    """
+    tipo_col = _resolve_first_alias(df, DMS_TIPO_ALIASES)
+    sit_col  = _resolve_first_alias(df, DMS_SITUACAO_ALIASES)
+    mask     = _dms_valid_launch_mask(df, tipo_col, sit_col)
+    n_excluidos = int((~mask).sum())
+    if n_excluidos:
+        LOG.info(
+            "filtrar_dms_validas: %s registro(s) excluído(s) "
+            "(SITUACAO=CANCELADA ou TIPO=RETIFICADORA).",
+            n_excluidos,
+        )
+    return df.loc[mask].reset_index(drop=True)
+
+
 def filter_dms_to_reference_month(
     dms_df: pd.DataFrame,
     *,
