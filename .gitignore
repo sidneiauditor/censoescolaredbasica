@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Dados e anexos locais (não versionar bases reais)
+dados/
+Anexos/
+Teste *.csv
+Teste *.xlsx
+*.pdf
+
+# App — uploads e saídas geradas
+app/uploads/*
+!app/uploads/.gitkeep
+app/outputs/*
+!app/outputs/.gitkeep
+app/.streamlit/secrets.toml
+
+# Relatórios e planilhas geradas / de teste na raiz
+*.xlsx
+*.csv
+*.pdf
+
+# Prompts e notas locais
+prompt_cursor_*.md
+leia-me/
+
+# Outros
+*.png
+*.jpg
+/services/
