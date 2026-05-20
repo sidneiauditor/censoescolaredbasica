@@ -39,6 +39,7 @@ DMS_COMPETENCIA_ALIASES: tuple[str, ...] = (
 )
 DMS_TIPO_ALIASES: tuple[str, ...] = ("TIPO", "TP_DOCUMENTO", "TP_DOC", "TIPO_DOCUMENTO")
 DMS_SITUACAO_ALIASES: tuple[str, ...] = ("SITUACAO", "SITUACAO_NF", "STATUS", "SIT_NF")
+DMS_CNPJ_ALIASES: tuple[str, ...] = ("NUCNPJ", "CNPJ", "NU_CNPJ", "CPF_CNPJ", "NR_CNPJ")
 
 
 def _valid_norm_mask(s: pd.Series) -> pd.Series:
@@ -210,27 +211,113 @@ def _dms_valid_launch_mask(
     return mask
 
 
-def filtrar_dms_validas(df: pd.DataFrame) -> pd.DataFrame:
+def resolver_vigencia_dms(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Remove DMS com SITUACAO='CANCELADA' ou TIPO='RETIFICADORA'.
+    Etapa de resolução de vigência da DMS — deve ser a **primeira** transformação
+    aplicada ao DataFrame bruto, antes de qualquer cálculo analítico.
 
-    Função centralizada de higienização — deve ser chamada sobre o DataFrame
-    DMS bruto ANTES de qualquer cálculo, agrupamento, merge ou exportação.
+    Regras aplicadas em ordem:
 
-    Reconhece as variantes de nome de coluna definidas em
-    ``DMS_SITUACAO_ALIASES`` e ``DMS_TIPO_ALIASES``.
+    1. Remove todas as linhas com SITUACAO = "CANCELADA".
+    2. Para cada (CNPJ, competência):
+       - se existe RETIFICADORA → mantém a RETIFICADORA e descarta a ORIGINAL;
+       - se existe apenas ORIGINAL → mantém a ORIGINAL.
+    3. Nunca considera ORIGINAL e RETIFICADORA simultaneamente na mesma competência.
+
+    Degradação graciosamente quando colunas não são encontradas:
+    - Sem coluna TIPO → retorna apenas com CANCELADAS removidas.
+    - Sem coluna CNPJ ou competência → exclui RETIFICADORA conservadoramente.
+
+    Reconhece variantes via ``DMS_SITUACAO_ALIASES``, ``DMS_TIPO_ALIASES``,
+    ``DMS_CNPJ_ALIASES`` e ``DMS_COMPETENCIA_ALIASES``.
     """
-    tipo_col = _resolve_first_alias(df, DMS_TIPO_ALIASES)
-    sit_col  = _resolve_first_alias(df, DMS_SITUACAO_ALIASES)
-    mask     = _dms_valid_launch_mask(df, tipo_col, sit_col)
-    n_excluidos = int((~mask).sum())
-    if n_excluidos:
-        LOG.info(
-            "filtrar_dms_validas: %s registro(s) excluído(s) "
-            "(SITUACAO=CANCELADA ou TIPO=RETIFICADORA).",
-            n_excluidos,
+    if df.empty:
+        return df.copy()
+
+    work = df.copy()
+
+    # ── 1. Remover CANCELADAS
+    sit_col = _resolve_first_alias(work, DMS_SITUACAO_ALIASES)
+    if sit_col:
+        sit = work[sit_col].astype(str).str.strip().str.upper()
+        n_canc = int(sit.eq("CANCELADA").sum())
+        work = work[sit.ne("CANCELADA")].copy()
+        if n_canc:
+            LOG.info("resolver_vigencia_dms: %s CANCELADA(s) removida(s).", n_canc)
+
+    if work.empty:
+        return work.reset_index(drop=True)
+
+    # ── 2. Resolver ORIGINAL × RETIFICADORA por (CNPJ, competência)
+    tipo_col = _resolve_first_alias(work, DMS_TIPO_ALIASES)
+    if tipo_col is None:
+        return work.reset_index(drop=True)
+
+    work["_tipo_u"] = work[tipo_col].astype(str).str.strip().str.upper()
+
+    # Atalho: se não há nenhuma RETIFICADORA, nada a resolver
+    if not work["_tipo_u"].eq("RETIFICADORA").any():
+        return work.drop(columns=["_tipo_u"]).reset_index(drop=True)
+
+    cnpj_col = _resolve_first_alias(work, DMS_CNPJ_ALIASES)
+    comp_col = _resolve_dms_competencia_column(work, {})
+
+    if cnpj_col is None or comp_col is None:
+        # Sem chave de grupo: excluir RETIFICADORA conservadoramente
+        n_ret = int(work["_tipo_u"].eq("RETIFICADORA").sum())
+        LOG.warning(
+            "resolver_vigencia_dms: coluna CNPJ ou competência não encontrada — "
+            "%s RETIFICADORA(s) excluída(s) conservadoramente.",
+            n_ret,
         )
-    return df.loc[mask].reset_index(drop=True)
+        return work[work["_tipo_u"].ne("RETIFICADORA")].drop(columns=["_tipo_u"]).reset_index(drop=True)
+
+    # Chave de período: "YYYY-MM" (NaT → NaN)
+    work["_periodo"] = pd.to_datetime(work[comp_col], errors="coerce").dt.strftime("%Y-%m")
+
+    mask_periodo_ok = work["_periodo"].notna()
+    validos   = work[mask_periodo_ok].copy()
+    invalidos = work[~mask_periodo_ok].copy()
+
+    # Grupos (CNPJ, período) que têm ao menos uma RETIFICADORA
+    grupos_ret = (
+        validos[validos["_tipo_u"] == "RETIFICADORA"]
+        [[cnpj_col, "_periodo"]]
+        .drop_duplicates()
+        .assign(_tem_ret=True)
+    )
+
+    validos = validos.merge(grupos_ret, on=[cnpj_col, "_periodo"], how="left")
+    # Converter para numpy bool para evitar problema de ~bool Python 3.13+
+    validos["_tem_ret"] = validos["_tem_ret"].fillna(False).astype("bool")
+
+    # Manter: RETIFICADORA em grupos com RETIFICADORA; tudo em grupos sem
+    mask_manter = (
+        (validos["_tem_ret"] & validos["_tipo_u"].eq("RETIFICADORA"))
+        | validos["_tem_ret"].eq(False)
+    )
+
+    n_orig_sub = int((validos["_tem_ret"] & validos["_tipo_u"].ne("RETIFICADORA")).sum())
+    if n_orig_sub:
+        n_periodos = int(
+            validos.loc[validos["_tem_ret"] & validos["_tipo_u"].ne("RETIFICADORA"), "_periodo"]
+            .nunique()
+        )
+        LOG.info(
+            "resolver_vigencia_dms: %s ORIGINAL(s) descartada(s) — substituída(s) "
+            "por RETIFICADORA em %s competência(s).",
+            n_orig_sub,
+            n_periodos,
+        )
+
+    cols_drop_v = ["_tipo_u", "_periodo", "_tem_ret"]
+    cols_drop_i = [c for c in ["_tipo_u", "_periodo"] if c in invalidos.columns]
+
+    return pd.concat(
+        [validos[mask_manter].drop(columns=cols_drop_v),
+         invalidos.drop(columns=cols_drop_i)],
+        ignore_index=True,
+    )
 
 
 def filter_dms_to_reference_month(

@@ -16,7 +16,7 @@ import streamlit as st
 from config import APP_DIR
 from controllers.common import load_bundle, versioned_output_path, write_xlsx_async
 from domain.dataset_kind import DatasetKind
-from services.cnpj_aggregation import filtrar_dms_validas
+from services.cnpj_aggregation import resolver_vigencia_dms
 from services.divergencia_export_service import exportar_divergencias_operacionais
 from services.indicators import add_basic_fiscal_indicators
 from services.superior_consolidator import MUNICIPIO_SALVADOR, consolidate_censo_superior
@@ -70,18 +70,17 @@ def _executar_pipeline_superior(
 ) -> bool:
     """Executa o pipeline completo e persiste resultado na sessão."""
 
-    # ── 0. Higienização: excluir DMS canceladas/retificadoras
+    # ── 0. Resolução de vigência: remove CANCELADAS, RETIFICADORA substitui ORIGINAL
     n_antes = len(dms_df)
-    dms_df = filtrar_dms_validas(dms_df)
+    dms_df = resolver_vigencia_dms(dms_df)
     n_excluidos = n_antes - len(dms_df)
     if n_excluidos:
-        st.warning(
-            f"**{n_excluidos} registro(s) excluído(s)** da DMS "
-            f"(SITUACAO=CANCELADA ou TIPO=RETIFICADORA) antes do processamento.",
-            icon="⚠️",
+        st.info(
+            f"Resolução de vigência DMS: **{n_excluidos} linha(s) removida(s)** "
+            f"(CANCELADAS excluídas; ORIGINAIs substituídas por RETIFICADORA onde aplicável)."
         )
     if dms_df.empty:
-        st.error("Nenhum registro DMS válido após higienização (todos cancelados/retificadores).")
+        st.error("Nenhum registro DMS válido após resolução de vigência.")
         return False
 
     # ── 1. Consolidar Censo Superior

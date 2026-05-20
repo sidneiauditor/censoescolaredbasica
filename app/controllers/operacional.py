@@ -28,7 +28,7 @@ from services.census_consolidator import (
     consolidate_census_escolar,
     normalize_co_entidade,
 )
-from services.cnpj_aggregation import filter_censo_for_fiscal_panel
+from services.cnpj_aggregation import filter_censo_for_fiscal_panel, resolver_vigencia_dms
 from services.cnpj_merge import deterministic_merge_by_cnpj
 from services.cnpj_root_aggregation import CNPJ_RAIZ_COL, dataframe_with_cnpj_raiz
 from services.divergencia_export_service import exportar_divergencias_operacionais
@@ -130,6 +130,19 @@ def _executar_pipeline_operacional(
     up_escola: Any,
     up_mat: Any,
 ) -> bool:
+    # ── 0. Resolução de vigência: remove CANCELADAS, RETIFICADORA substitui ORIGINAL
+    n_antes = len(dms_df)
+    dms_df = resolver_vigencia_dms(dms_df)
+    n_excluidos = n_antes - len(dms_df)
+    if n_excluidos:
+        st.info(
+            f"Resolução de vigência DMS: **{n_excluidos} linha(s) removida(s)** "
+            f"(CANCELADAS excluídas; ORIGINAIs substituídas por RETIFICADORA onde aplicável)."
+        )
+    if dms_df.empty:
+        st.error("Nenhum registro DMS válido após resolução de vigência.")
+        return False
+
     cols_esc = list(map(str, df_escola.columns))
     map_e = resolve_escola_mapping(cols_esc, ui_simples=True)
     map_m = resolve_matricula_mapping(list(map(str, df_mat.columns)), ui_simples=True)
