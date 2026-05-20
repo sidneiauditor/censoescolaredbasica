@@ -60,14 +60,18 @@ _NUMERIC_COLS = {
 def exportar_divergencias_operacionais(
     df: pd.DataFrame,
     exercicio: int | None = None,
+    col_censo_entidade: str = "censo__CO_ENTIDADE",
 ) -> bytes:
     """
     Gera o Relatório Operacional de Divergências em .xlsx.
 
     Parâmetros
     ----------
-    df        : base integrada DMS × Censo (saída do pipeline de merge).
-    exercicio : ano de referência para filtro de maio. Auto-detectado se None.
+    df               : base integrada DMS × Censo (saída do pipeline de merge).
+    exercicio        : ano de referência para filtro de maio. Auto-detectado se None.
+    col_censo_entidade : coluna que identifica a entidade de ensino no Censo.
+                        "censo__CO_ENTIDADE" para Ed. Básica (padrão);
+                        "censo__CO_IES" para Ensino Superior.
 
     Retorna bytes prontos para st.download_button(data=...).
     """
@@ -109,15 +113,15 @@ def exportar_divergencias_operacionais(
         .rename("qtd_maio")
     )
 
-    # ── 5. Matrículas Censo por CNPJ — soma de escolas únicas vinculadas
+    # ── 5. Matrículas Censo por CNPJ — soma de entidades únicas vinculadas
     censo_por_cnpj: pd.Series
-    if "censo__CO_ENTIDADE" in work.columns:
-        escolas_unicas = (
-            work.loc[work["censo__CO_ENTIDADE"].notna()]
-            .drop_duplicates(["dms__NUCNPJ", "censo__CO_ENTIDADE"])
+    if col_censo_entidade in work.columns:
+        entidades_unicas = (
+            work.loc[work[col_censo_entidade].notna()]
+            .drop_duplicates(["dms__NUCNPJ", col_censo_entidade])
         )
         censo_por_cnpj = (
-            escolas_unicas.groupby("dms__NUCNPJ", sort=False)["__censo_mat"]
+            entidades_unicas.groupby("dms__NUCNPJ", sort=False)["__censo_mat"]
             .sum()
             .rename("qtd_censo")
         )

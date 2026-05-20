@@ -241,12 +241,21 @@ def _render_superior_dashboard() -> None:
             with st.expander(f"Sem correspondência — {len(sem)} contribuintes"):
                 st.dataframe(sem, use_container_width=True, height=220)
 
-    # Export
+    # Export — apenas registros com vínculo IES estabelecido
     st.divider()
     exercicio = PipelineState.exercise()
+    resultado_matched = (
+        resultado[resultado["match_status"] == "match_textual"]
+        if "match_status" in resultado.columns
+        else resultado
+    )
     st.download_button(
         label="Exportar Divergências Operacionais — Ensino Superior (.xlsx)",
-        data=exportar_divergencias_operacionais(resultado, exercicio=exercicio),
+        data=exportar_divergencias_operacionais(
+            resultado_matched,
+            exercicio=exercicio,
+            col_censo_entidade="censo__CO_IES",
+        ),
         file_name=f"divergencias_superior_{exercicio}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_divergencias_superior",
