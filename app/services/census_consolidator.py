@@ -16,6 +16,7 @@ import logging
 import pandas as pd
 
 from domain.census_logical import CENSO_ESCOLA_FIELDS, CENSO_MATRICULA_FIELDS
+from services.census_semantics import physical_qt_mat_bas_column
 
 LOG = logging.getLogger(__name__)
 
@@ -183,6 +184,13 @@ def consolidate_census_escolar(
             exercise_year,
         )
         out = esc_part.copy()
+        # Microdados INEP já contêm QT_MAT_BAS na tabela Escola — preservar quando não há Matrícula.
+        qt_col = physical_qt_mat_bas_column(df_escola.columns)
+        if qt_col and qt_col in df_escola.columns and QT_MAT_BAS_CANONICAL not in out.columns:
+            out[QT_MAT_BAS_CANONICAL] = pd.to_numeric(
+                df_escola[qt_col].to_numpy(), errors="coerce"
+            )
+            LOG.info("QT_MAT_BAS extraída da tabela Escola (%s valores não-nulos).", out[QT_MAT_BAS_CANONICAL].notna().sum())
         out["censo_fonte_escola"] = source_escola_label
         out["censo_fonte_matricula"] = ""
         out["censo_exercicio"] = str(exercise_year)
