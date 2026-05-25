@@ -179,7 +179,7 @@ def _executar_pipeline_operacional(
     geo_ctx["mun_label"] = ROTULO_SALVADOR_CURTO
 
     df_esc_eff = df_escola.copy()
-    df_mat_eff = df_mat.copy()
+    df_mat_eff = df_mat.copy() if df_mat is not None else None
 
     if geo_ctx.get("filtro_ativo") and geo_ctx.get("uf") and geo_ctx.get("mun_code"):
         df_esc_eff, filt_stats = filter_escola_by_municipality(
