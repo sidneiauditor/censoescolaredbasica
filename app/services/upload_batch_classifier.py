@@ -106,6 +106,13 @@ class OperationalBatchResolved:
 
         return frozenset(self.uploads) == REQUIRED_BATCH_KINDS
 
+    def pair_ready(self) -> bool:
+        """DMS + Escola presentes, sem conflitos — Matrícula é opcional."""
+        if self.ambiguous_kinds:
+            return False
+        required = frozenset((DatasetKind.DMS_EDUCACAO, DatasetKind.CENSO_ESCOLA))
+        return required.issubset(frozenset(self.uploads))
+
 
 def normalized_column_set(columns: Iterable[str]) -> frozenset[str]:
     return frozenset(normalize_identifier(c) for c in columns if str(c).strip())

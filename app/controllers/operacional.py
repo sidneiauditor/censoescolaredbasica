@@ -165,7 +165,9 @@ def _executar_pipeline_operacional(
 
     cols_esc = list(map(str, df_escola.columns))
     map_e = resolve_escola_mapping(cols_esc, ui_simples=True)
-    map_m = resolve_matricula_mapping(list(map(str, df_mat.columns)), ui_simples=True)
+    map_m = resolve_matricula_mapping(
+        list(map(str, df_mat.columns)) if df_mat is not None else None, ui_simples=True
+    )
 
     geo_ctx = construir_geo_context_salvador(df_escola, map_e, int(exercise_year_ctx))
     if geo_ctx.get("filtro_impossivel_geo"):
@@ -379,15 +381,15 @@ def main_operacional_ui() -> None:
                 up_slot_dms_final, up_slot_esc_final, up_slot_mat_final,
             )
 
-        tripla_sem_ambiguo  = resultado_do_lote.triple_ready()
-        leituras_ok_local   = df_dmss is not None and df_esc_final is not None and df_matricula_final is not None
+        tripla_sem_ambiguo  = resultado_do_lote.triple_ready() or resultado_do_lote.pair_ready()
+        leituras_ok_local   = df_dmss is not None and df_esc_final is not None
         pode_gravar_na_pipeline = tripla_sem_ambiguo and leituras_ok_local
 
         if not tripla_sem_ambiguo:
             st.button(
                 "Processar dados", disabled=True,
                 key="cif_ops_proc_disabled_waiting_triple",
-                help="O lote ainda não tem uma **única DMS-Educação**, uma **Escola** e uma **Matrícula** bem identificadas.",
+                help="O lote ainda não tem uma **DMS-Educação** e uma **Escola** bem identificadas.",
             )
             clicked_run = False
         else:
@@ -421,12 +423,12 @@ def main_operacional_ui() -> None:
     )
     deve_rodar = (clicked_run and pode_gravar_na_pipeline) or rerun_auto
 
-    if clicked_run and not resultado_do_lote.triple_ready():
+    if clicked_run and not tripla_sem_ambiguo:
         st.warning(
-            "Resolva os avisos do **lote** (Etiquetas DMS / Escola / Matrícula ausentes ou em conflito) "
+            "Resolva os avisos do **lote** (DMS-Educação e/ou Escola ausentes ou em conflito) "
             "antes de continuar."
         )
-    elif clicked_run and resultado_do_lote.triple_ready() and not leituras_ok_local:
+    elif clicked_run and tripla_sem_ambiguo and not leituras_ok_local:
         st.warning("Etiquetas corretas no lote, mas **CSV/XLSX** com erro estrutural — confira mensagens.")
 
     if rerun_auto and not (clicked_run and pode_gravar_na_pipeline):
